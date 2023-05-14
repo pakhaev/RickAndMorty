@@ -6,6 +6,7 @@
 //
 
 import Foundation
+import Alamofire
 
 enum NetworkError: Error {
     case invalidURL
@@ -18,50 +19,51 @@ final class NetworkManager {
     
     private init() {}
     
-    func fetch<T: Decodable>(_ type: T.Type, from url: String?, with completion: @escaping(Result<T, NetworkError>) -> Void) {
+    func fetch<T: Decodable>(_ type: T.Type, from url: String?, with completion: @escaping(Result<T, AFError>) -> Void) {
         guard let url = URL(string: url ?? "") else {
-            completion(.failure(.invalidURL))
+            completion(.failure(.invalidURL(url: url ?? "")))
             return
         }
         
-        URLSession.shared.dataTask(with: url) { data, _, error in
-            guard let data else {
-                completion(.failure(.noData))
-                print(error?.localizedDescription ?? "No error description")
-                return
-            }
-            
-            do {
-                let decoder = JSONDecoder()
-                
-                let dataModel = try decoder.decode(T.self, from: data)
-                
-                DispatchQueue.main.async {
-                    completion(.success(dataModel))
+        AF.request(url)
+            .validate()
+            .responseJSON {dataResponse in
+                switch dataResponse.result {
+                case .success(let value):
+                    var result: T
+
+                    switch T.self {
+                    case is RickAndMorty.Type:
+                        result = RickAndMorty.getRickAndMorty(from: value) as! T
+                    case is Character.Type:
+                        result = Character.getCharacter(from: value) as! T
+                    default:
+                        result = Episode.getEpisode(from: value) as! T
+                    }
+                    completion(.success(result))
+                case .failure(let error):
+                    completion(.failure(error))
                 }
-            } catch {
-                completion(.failure(.decodingError))
             }
-        }.resume()
     }
     
-    func fetchImage(from url: String?, with completion: @escaping (Result<Data, NetworkError>) -> Void) {
+    func fetchImage(from url: String?, with completion: @escaping (Result<Data, AFError>) -> Void) {
         
         guard let url = URL(string: url ?? "") else {
-            completion(.failure(.invalidURL))
+            completion(.failure(.invalidURL(url: url ?? "")))
             return
         }
         
-        DispatchQueue.global().async {
-            guard let imageData = try? Data(contentsOf: url) else {
-                completion(.failure(.noData))
-                return
+        AF.request(url)
+            .validate()
+            .responseData { dataResponse in
+                switch dataResponse.result {
+                case .success(let data):
+                    completion(.success(data))
+                case .failure(let error):
+                    completion(.failure(error))
+                }
             }
-            
-            DispatchQueue.main.async {
-                completion(.success(imageData))
-            }
-        }
         
     }
 }
